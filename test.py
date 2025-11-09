@@ -7,7 +7,7 @@ def capture_and_segment_persons():
     cap = cv2.VideoCapture(1)
     
     # Charger le modèle YOLO
-    model = YOLO('yolov8n.pt')
+    model = YOLO('./model/yolov8n.pt')
     
     # Capturer une image
     ret, frame = cap.read()
@@ -43,7 +43,6 @@ person_images = capture_and_segment_persons()
 # Afficher ou sauvegarder les images
 for i, img in enumerate(person_images):
     cv2.imshow(f'Person {i}', img)
-    cv2.imwrite(f'person_{i}.jpg', img)
 
 cv2.waitKey(0)
 cv2.destroyAllWindows()
