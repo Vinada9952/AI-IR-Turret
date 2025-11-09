@@ -9,6 +9,8 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 # Load YOLO model once
 model = YOLO('./model/yolov8n.pt')
 
+print( "setup done" )
+
 def captureImage():
     """Capture a frame from the video feed"""
     global cap
