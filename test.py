@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-def capture_and_segment_persons():
+def segmentImage():
     # Initialiser la caméra
     cap = cv2.VideoCapture(1)
     
@@ -38,7 +38,7 @@ def capture_and_segment_persons():
     return person_images
 
 # Utilisation
-person_images = capture_and_segment_persons()
+person_images = segmentImage()
 
 # Afficher ou sauvegarder les images
 for i, img in enumerate(person_images):
