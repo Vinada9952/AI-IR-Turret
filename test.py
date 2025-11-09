@@ -1,48 +1,90 @@
 import cv2
-import numpy as np
 from ultralytics import YOLO
+import mediapipe
+import numpy as np
 
-def segmentImage():
-    # Initialiser la caméra
-    cap = cv2.VideoCapture(1)
-    
-    # Charger le modèle YOLO
-    model = YOLO('./model/yolov8n.pt')
-    
-    # Capturer une image
+# Initialize Mediapipe
+mp = mediapipe
+mp_drawing = mp.solutions.drawing_utils
+mp_pose = mp.solutions.pose
+
+# Initialize video capture
+cap = cv2.VideoCapture(1)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+print( "setup done" )
+
+def captureImage():
+    """Capture a frame from the video feed"""
+    global cap
     ret, frame = cap.read()
     if not ret:
-        print("Erreur lors de la capture")
-        return []
-    
-    # Détecter les personnes dans l'image
-    results = model(frame, classes=0)  # class 0 est 'person' dans COCO
-    
-    # Liste pour stocker les images découpées
-    person_images = []
-    
-    # Pour chaque détection
-    for detection in results[0].boxes.data:
-        x1, y1, x2, y2, conf, class_id = detection
-        if conf > 0.5:  # Seuil de confiance
-            # Convertir en entiers
-            x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
+        return None
+    return ret, frame
+
+def drawSkeleton(frame):
+    """Process frame and draw skeleton landmarks"""
+    with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+        # Mirror the frame horizontally
+        frame = cv2.flip(frame, 1)
+        
+        # Convert to RGB for MediaPipe
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        rgb.flags.writeable = False
+        
+        # Process the frame
+        results = pose.process(rgb)
+        
+        # Convert back to BGR
+        rgb.flags.writeable = True
+        output = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+
+        avg_torso = None
+        
+        if results.pose_landmarks:
+            # Draw the pose landmarks
+            mp_drawing.draw_landmarks(
+                output,
+                results.pose_landmarks,
+                mp_pose.POSE_CONNECTIONS,
+                mp_drawing.DrawingSpec(color=(0,255,0), thickness=2, circle_radius=3),
+                mp_drawing.DrawingSpec(color=(0,0,255), thickness=2)
+            )
             
-            # Découper l'image
-            person_img = frame[y1:y2, x1:x2]
-            person_images.append(person_img)
-    
-    # Libérer la caméra
+            # Extract torso points
+            left_shoulder = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
+            right_shoulder = results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
+            left_hip = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_HIP]
+            right_hip = results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_HIP]
+            
+            # Calculate average torso position
+            avg_torso = (
+                (left_shoulder.x + right_shoulder.x + left_hip.x + right_hip.x) / 4,
+                (left_shoulder.y + right_shoulder.y + left_hip.y + right_hip.y) / 4
+            )
+            
+            # Draw torso center point
+            h, w = output.shape[:2]
+            center_point = (int(avg_torso[0] * w), int(avg_torso[1] * h))
+            cv2.circle(output, center_point, 5, (255, 0, 0), -1)
+            
+        return output, avg_torso
+
+try:
+    while True:
+        ret, frame = captureImage()
+        if not ret:
+            print("Failed to grab frame")
+            break
+
+        img, pos = drawSkeleton(frame)
+        if pos:
+            print( f"torso : {pos}" )
+
+        cv2.imshow("Webcam - Skeleton", img)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+
+finally:
     cap.release()
-    
-    return person_images
-
-# Utilisation
-person_images = segmentImage()
-
-# Afficher ou sauvegarder les images
-for i, img in enumerate(person_images):
-    cv2.imshow(f'Person {i}', img)
-
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+    cv2.destroyAllWindows()
