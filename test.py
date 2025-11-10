@@ -212,12 +212,14 @@ try:
         cv2.imshow( "image", frame )
 
         poses = []
-        printer = ""
+        people = []
+        printer = "\n\n"
         for i in range( len( persons ) ):
+            name = recognize( persons[i], "./models/recognition.pth" )
             persons[i], pos = drawSkeleton( persons[i] )
-            cv2.imshow( f"person {i}", persons[i] )
+            cv2.imshow( f"{name}", persons[i] )
             poses.append( pos )
-            printer += f"person {i} : {pos=}\n"
+            printer += f"{name} : {pos=}\n"
         print( printer )
 
         key = cv2.waitKey(1) & 0xFF
