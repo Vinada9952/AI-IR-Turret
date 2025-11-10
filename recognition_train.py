@@ -22,10 +22,10 @@ def main():
     torch.backends.cudnn.benchmark = True
 
     data_dir = './train_datas/'
-    num_epochs = 150
+    num_epochs = 40
     batch_size = 256
     num_workers = os.cpu_count()
-    model_save_path = 'model.pth'
+    model_save_path = './models/recognition.pth'
 
     # Transforms
     transform = transforms.Compose([

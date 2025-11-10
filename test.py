@@ -1,6 +1,9 @@
 import cv2
 from ultralytics import YOLO
 import mediapipe
+import torch
+from torchvision import models, transforms
+from PIL import Image
 import numpy as np
 
 # Initialize Mediapipe
@@ -73,7 +76,43 @@ def captureImage():
             info['converted'] = 'none_tried:' + ",".join(map(str,tried))
 
     return ret, frame, info
-# ...existing code...
+
+def recognize( frame, file_path ):
+    transform = transforms.Compose( [
+        transforms.Resize( ( 224, 224 ) ),
+        transforms.ToTensor(),
+        transforms.Normalize( 
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ] )
+
+    # Charger l'image et la transformer
+    image = Image.fromarray( cv2.cvtColor( frame, cv2.COLOR_BGR2RGB ) )
+    input_tensor = transform( image ).unsqueeze( 0 )  # Ajouter dimension batch
+
+    # Charger le modèle et les classes
+    checkpoint = torch.load( file_path, map_location='cuda' if torch.cuda.is_available() else 'cpu' )
+    class_names = checkpoint['class_names']
+
+    # Créer et préparer le modèle
+    model = models.resnet18( pretrained=False )
+    model.fc = torch.nn.Linear( model.fc.in_features, len( class_names ) )
+    model.load_state_dict( checkpoint['model_state_dict'] )
+
+    # Mettre le modèle en mode évaluation
+    device = torch.device( 'cuda' if torch.cuda.is_available() else 'cpu' )
+    model = model.to( device )
+    model.eval()
+
+    # Prédire avec torch.no_grad
+    with torch.no_grad():
+        input_tensor = input_tensor.to( device )
+        output = model( input_tensor )
+        _, predicted_idx = torch.max( output, 1 )
+        predicted_label = class_names[predicted_idx.item()]
+
+    return predicted_label
 
 def drawSkeleton(frame):
     """Process frame and draw skeleton landmarks"""
@@ -188,4 +227,3 @@ try:
 finally:
     cap.release()
     cv2.destroyAllWindows()
-# ...existing code...
