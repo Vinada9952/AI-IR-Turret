@@ -10,7 +10,7 @@ mp_pose = mp.solutions.pose
 print( "MediaPipe setup done" )
 
 # Initialize YOLO
-model = YOLO('./model/yolov8n.pt')
+model = YOLO('./models/yolov8n.pt')
 print( "YOLO setup done" )
 
 # Initialize video capture (essaye DirectShow puis fallback)
