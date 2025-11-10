@@ -194,6 +194,8 @@ def segmentImage(frame, model, conf_thresh=0.5):
 
 print( "setup done" )
 
+windows = [ "image" ]
+
 try:
     while True:
         ret, frame, info = captureImage()
@@ -212,20 +214,32 @@ try:
         cv2.imshow( "image", frame )
 
         poses = []
-        people = []
+        people = [ "image" ]
         printer = "\n\n"
+        # cv2.destroyAllWindows()
         for i in range( len( persons ) ):
             name = recognize( persons[i], "./models/recognition.pth" )
+            people.append( name )
             persons[i], pos = drawSkeleton( persons[i] )
             cv2.imshow( f"{name}", persons[i] )
             poses.append( pos )
             printer += f"{name} : {pos=}\n"
+            windows.append( name )
+        
+        for window in windows:
+            if window not in people:
+                try:
+                    cv2.destroyWindow( window )
+                    print( f"detroying window {window}" )
+                except Exception:
+                    pass
+        
+        
         print( printer )
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             break
-
 finally:
     cap.release()
     cv2.destroyAllWindows()
