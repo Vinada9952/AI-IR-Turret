@@ -43,7 +43,7 @@ def segmentImage(frame, model, conf_thresh=0.5):
             continue
 
         crop = frame[y1:y2, x1:x2].copy()
-        person_images.append((crop, (x1, y1, x2, y2, conf)))
+        person_images.append(crop)
 
     return person_images
 
@@ -56,15 +56,18 @@ try:
 
         persons = segmentImage(frame, model)
 
-        # Draw boxes on original frame and show crops
-        for i, (crop, bbox) in enumerate(persons):
-            x1, y1, x2, y2, conf = bbox
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(frame, f"{conf:.2f}", (x1, y1 - 6),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
-            cv2.imshow(f"Person {i}", crop)
+        # # Draw boxes on original frame and show crops
+        # for i, (crop, bbox) in enumerate(persons):
+        #     x1, y1, x2, y2, conf = bbox
+        #     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        #     cv2.putText(frame, f"{conf:.2f}", (x1, y1 - 6),
+        #                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+        #     cv2.imshow(f"Person {i}", crop)
 
-        cv2.imshow("Frame", frame)
+        for i in range( len( persons ) ):
+            cv2.imshow( f"Person {i}", persons[i] )
+
+        # cv2.imshow("Frame", frame)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break

@@ -7,20 +7,73 @@ import numpy as np
 mp = mediapipe
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
+print( "MediaPipe setup done" )
 
-# Initialize video capture
-cap = cv2.VideoCapture(1)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-print( "setup done" )
+# Initialize YOLO
+model = YOLO('./model/yolov8n.pt')
+print( "YOLO setup done" )
+
+# Initialize video capture (essaye DirectShow puis fallback)
+def open_capture(port=0):
+    cap_local = cv2.VideoCapture(port, cv2.CAP_DSHOW)
+    if not cap_local.isOpened():
+        cap_local = cv2.VideoCapture(port)
+    return cap_local
+
+cap = open_capture(1)
+# cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+# cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+print( "OpenCV setup done" )
+# ...existing code...
 
 def captureImage():
-    """Capture a frame from the video feed"""
+    """Capture a frame from the video feed and return debug info"""
     global cap
     ret, frame = cap.read()
-    if not ret:
-        return None
-    return ret, frame
+    info = {}
+    if not ret or frame is None:
+        return ret, frame, info
+
+    # Basic diagnostics
+    info['shape'] = frame.shape
+    info['dtype'] = str(frame.dtype)
+    try:
+        info['min'] = int(frame.min())
+        info['max'] = int(frame.max())
+    except Exception:
+        info['min'] = None
+        info['max'] = None
+    info['converted'] = None
+
+    # If single channel -> convert to BGR for display
+    if len(frame.shape) == 2:
+        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+        info['converted'] = 'GRAY2BGR'
+        return ret, frame, info
+
+    # If 3 channels but all equal (gris déguisé), tenter quelques conversions YUV courantes
+    b,g,r = frame[:,:,0].astype(int), frame[:,:,1].astype(int), frame[:,:,2].astype(int)
+    channel_diff = (np.abs(b-g).mean() + np.abs(g-r).mean()) / 2
+    if channel_diff < 1.0:
+        # tentatives de conversion YUV -> BGR (peut échouer selon format)
+        tried = []
+        for conv in (cv2.COLOR_YUV2BGR_YUY2, cv2.COLOR_YUV2BGR_UYVY, cv2.COLOR_YUV2BGR_NV12, cv2.COLOR_YUV2BGR_I420):
+            try:
+                newf = cv2.cvtColor(frame, conv)
+                # si la conversion donne des canaux différents, on l'utilise
+                nb, ng, nr = newf[:,:,0], newf[:,:,1], newf[:,:,2]
+                if (np.abs(nb-ng).mean() + np.abs(ng-nr).mean())/2 > 1.0:
+                    frame = newf
+                    info['converted'] = conv
+                    break
+                tried.append(conv)
+            except Exception:
+                tried.append(f"err_{conv}")
+        if info['converted'] is None:
+            info['converted'] = 'none_tried:' + ",".join(map(str,tried))
+
+    return ret, frame, info
+# ...existing code...
 
 def drawSkeleton(frame):
     """Process frame and draw skeleton landmarks"""
@@ -54,13 +107,15 @@ def drawSkeleton(frame):
             # Extract torso points
             left_shoulder = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
             right_shoulder = results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
-            left_hip = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_HIP]
-            right_hip = results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_HIP]
+            # left_hip = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_HIP]
+            # right_hip = results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_HIP]
             
             # Calculate average torso position
             avg_torso = (
-                (left_shoulder.x + right_shoulder.x + left_hip.x + right_hip.x) / 4,
-                (left_shoulder.y + right_shoulder.y + left_hip.y + right_hip.y) / 4
+                # (left_shoulder.x + right_shoulder.x + left_hip.x + right_hip.x) / 4,
+                # (left_shoulder.y + right_shoulder.y + left_hip.y + right_hip.y) / 4
+                (left_shoulder.x + right_shoulder.x) / 2,
+                (left_shoulder.y + right_shoulder.y) / 2
             )
             
             # Draw torso center point
@@ -70,21 +125,67 @@ def drawSkeleton(frame):
             
         return output, avg_torso
 
+def segmentImage(frame, model, conf_thresh=0.5):
+    """Return list of cropped person images from frame using provided model"""
+    results = model(frame, classes=0)  # class 0 = person (COCO)
+    person_images = []
+
+    if len(results) == 0:
+        return person_images
+
+    # results[0].boxes.data columns: x1, y1, x2, y2, conf, class
+    for det in results[0].boxes.data:
+        x1, y1, x2, y2, conf, cls = map(float, det)
+        if conf < conf_thresh:
+            continue
+
+        h, w = frame.shape[:2]
+        x1 = max(0, int(x1))
+        y1 = max(0, int(y1))
+        x2 = min(w, int(x2))
+        y2 = min(h, int(y2))
+
+        if x2 <= x1 or y2 <= y1:
+            continue
+
+        crop = frame[y1:y2, x1:x2].copy()
+        person_images.append(crop)
+
+    return person_images
+
+print( "setup done" )
+
 try:
     while True:
-        ret, frame = captureImage()
+        ret, frame, info = captureImage()
+        # print(f"{ret=}, info={info}")
         if not ret:
             print("Failed to grab frame")
             break
 
-        img, pos = drawSkeleton(frame)
-        if pos:
-            print( f"torso : {pos}" )
+        persons = segmentImage( frame, model )
+        # overlay debug text
+        # disp = frame.copy() if frame is not None else np.zeros((480,640,3),dtype=np.uint8)
+        # txt = f"{info.get('shape')} {info.get('dtype')} min={info.get('min')} max={info.get('max')} conv={info.get('converted')}"
+        # cv2.putText(disp, txt, (8,20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1, cv2.LINE_AA)
 
-        cv2.imshow("Webcam - Skeleton", img)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        # cv2.imshow( "image", disp )
+        cv2.imshow( "image", frame )
+
+        poses = []
+        printer = ""
+        for i in range( len( persons ) ):
+            persons[i], pos = drawSkeleton( persons[i] )
+            cv2.imshow( f"person {i}", persons[i] )
+            poses.append( pos )
+            printer += f"person {i} : {pos=}\n"
+        print( printer )
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
             break
 
 finally:
     cap.release()
     cv2.destroyAllWindows()
+# ...existing code...
