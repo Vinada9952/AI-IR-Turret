@@ -16,66 +16,18 @@ print( "MediaPipe setup done" )
 model = YOLO('./models/yolov8n.pt')
 print( "YOLO setup done" )
 
-# Initialize video capture (essaye DirectShow puis fallback)
-def open_capture(port=0):
-    cap_local = cv2.VideoCapture(port, cv2.CAP_DSHOW)
-    if not cap_local.isOpened():
-        cap_local = cv2.VideoCapture(port)
-    return cap_local
-
-cap = open_capture(1)
+cap = cv2.VideoCapture( 1 )
 # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 print( "OpenCV setup done" )
 # ...existing code...
 
 def captureImage():
-    """Capture a frame from the video feed and return debug info"""
-    global cap
     ret, frame = cap.read()
-    info = {}
-    if not ret or frame is None:
-        return ret, frame, info
-
-    # Basic diagnostics
-    info['shape'] = frame.shape
-    info['dtype'] = str(frame.dtype)
-    try:
-        info['min'] = int(frame.min())
-        info['max'] = int(frame.max())
-    except Exception:
-        info['min'] = None
-        info['max'] = None
-    info['converted'] = None
-
-    # If single channel -> convert to BGR for display
-    if len(frame.shape) == 2:
-        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-        info['converted'] = 'GRAY2BGR'
-        return ret, frame, info
-
-    # If 3 channels but all equal (gris déguisé), tenter quelques conversions YUV courantes
-    b,g,r = frame[:,:,0].astype(int), frame[:,:,1].astype(int), frame[:,:,2].astype(int)
-    channel_diff = (np.abs(b-g).mean() + np.abs(g-r).mean()) / 2
-    if channel_diff < 1.0:
-        # tentatives de conversion YUV -> BGR (peut échouer selon format)
-        tried = []
-        for conv in (cv2.COLOR_YUV2BGR_YUY2, cv2.COLOR_YUV2BGR_UYVY, cv2.COLOR_YUV2BGR_NV12, cv2.COLOR_YUV2BGR_I420):
-            try:
-                newf = cv2.cvtColor(frame, conv)
-                # si la conversion donne des canaux différents, on l'utilise
-                nb, ng, nr = newf[:,:,0], newf[:,:,1], newf[:,:,2]
-                if (np.abs(nb-ng).mean() + np.abs(ng-nr).mean())/2 > 1.0:
-                    frame = newf
-                    info['converted'] = conv
-                    break
-                tried.append(conv)
-            except Exception:
-                tried.append(f"err_{conv}")
-        if info['converted'] is None:
-            info['converted'] = 'none_tried:' + ",".join(map(str,tried))
-
-    return ret, frame, info
+    if ret:
+        return frame
+    print( "can't grab image" )
+    exit()
 
 def recognize( frame, file_path ):
     transform = transforms.Compose( [

@@ -5,11 +5,12 @@ import numpy as np
 mp = mediapipe
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
+print( "Mediapipe setup done" )
 
 # Initialize video capture
 cap = cv2.VideoCapture(1)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+# cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+# cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 print( "setup done" )
 
 def captureImage():
