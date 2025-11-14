@@ -1,10 +1,11 @@
 import cv2
 from ultralytics import YOLO
 import mediapipe
-import torch
-from torchvision import models, transforms
-from PIL import Image
+import os
 import numpy as np
+from pathlib import Path
+import shutil
+
 
 # Initialize Mediapipe
 mp = mediapipe
@@ -13,14 +14,15 @@ mp_pose = mp.solutions.pose
 print( "MediaPipe setup done" )
 
 # Initialize YOLO
-model = YOLO('./models/yolov8n.pt')
+model = YOLO('./model/yolov8n.pt')
 print( "YOLO setup done" )
 
 cap = cv2.VideoCapture( 1 )
 # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 print( "OpenCV setup done" )
-# ...existing code...
+
+
 
 def captureImage():
     ret, frame = cap.read()
@@ -29,42 +31,83 @@ def captureImage():
     print( "can't grab image" )
     exit()
 
-def recognize( frame, file_path ):
-    transform = transforms.Compose( [
-        transforms.Resize( ( 224, 224 ) ),
-        transforms.ToTensor(),
-        transforms.Normalize( 
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225]
-        )
-    ] )
+def load_model():
+    if not Path("model/lbph_model.yml").exists():
+        print("Aucun modèle entraîné trouvé. Entraînez d'abord le modèle.")
+        return None, None
+    try:
+        recognizer = cv2.face.LBPHFaceRecognizer_create()
+        recognizer.read(str(Path("model/lbph_model.yml")))
+    except Exception as e:
+        print("Erreur chargement modèle LBPH:", e)
+        return None, None
 
-    # Charger l'image et la transformer
-    image = Image.fromarray( cv2.cvtColor( frame, cv2.COLOR_BGR2RGB ) )
-    input_tensor = transform( image ).unsqueeze( 0 )  # Ajouter dimension batch
+    # charge label_map
+    label_map = {}
+    label_map_file = Path("model") / "labels.txt"
+    if label_map_file.exists():
+        with open(label_map_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                idx, name = line.split(':', 1)
+                label_map[int(idx)] = name
+    return recognizer, label_map
 
-    # Charger le modèle et les classes
-    checkpoint = torch.load( file_path, map_location='cuda' if torch.cuda.is_available() else 'cpu' )
-    class_names = checkpoint['class_names']
+recognizer, label_map = load_model()
+print( "Recognizer setup done" )
 
-    # Créer et préparer le modèle
-    model = models.resnet18( pretrained=False )
-    model.fc = torch.nn.Linear( model.fc.in_features, len( class_names ) )
-    model.load_state_dict( checkpoint['model_state_dict'] )
 
-    # Mettre le modèle en mode évaluation
-    device = torch.device( 'cuda' if torch.cuda.is_available() else 'cpu' )
-    model = model.to( device )
-    model.eval()
+def recognize(frame, confidence_threshold=80):
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    # recognizer, label_map = load_model()
+    global recognizer, label_map
+    if recognizer is None:
+        return
 
-    # Prédire avec torch.no_grad
-    with torch.no_grad():
-        input_tensor = input_tensor.to( device )
-        output = model( input_tensor )
-        _, predicted_idx = torch.max( output, 1 )
-        predicted_label = class_names[predicted_idx.item()]
+    # face_cascade = cv2.CascadeClassifier(HAAR_CASCADE_PATH)
 
-    return predicted_label
+    # print("Lancement de la reconnaissance. Appuyez sur 'q' pour quitter.")
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50,50))
+    name = ""
+    
+    img_principale = None
+    size_principale = 0
+
+    for i, (x,y,w,h) in enumerate( faces ):
+        if w*h > size_principale:
+            size_principale = w*h
+            try:
+                img_principale = faces[i]
+            except UnboundLocalError:
+                return None, None, False
+    try:
+        if img_principale == None:
+            return None, None, False
+    except ValueError:
+        pass
+    
+    face = img_principale
+    ( x, y, w, h ) = face
+    face = gray[y:y+h, x:x+w]
+    face_resized = cv2.resize(face, (200, 200))
+    label, confidence = recognizer.predict(face_resized)
+    # LBPH renvoie la "distance" -- plus petit vaut mieux. On utilise un seuil pour décider.
+    name = label_map.get(label, "Inconnu") if label_map else str(label)
+    text = f"{name} ({confidence:.1f})"
+    if confidence > confidence_threshold:
+        # trop éloigné -> inconnu
+        text = f"Inconnu ({confidence:.1f})"
+        name = "Inconnu"
+
+    # affiche rectangle et nom
+    cv2.rectangle(frame, (x,y), (x+w, y+h), (0,255,0), 2)
+    cv2.putText(frame, text, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
+
+    return frame, name, True
+
 
 def drawSkeleton(frame):
     """Process frame and draw skeleton landmarks"""
@@ -170,21 +213,35 @@ try:
         printer = "\n\n"
         # cv2.destroyAllWindows()
         for i in range( len( persons ) ):
-            name = recognize( persons[i], "./models/recognition.pth" )
-            people.append( name )
-            persons[i], pos = drawSkeleton( persons[i] )
-            cv2.imshow( f"{name}", persons[i] )
-            poses.append( pos )
-            printer += f"{name} : {pos=}\n"
-            windows.append( name )
+            output_frame, name, returned = recognize( persons[i] )
+            if returned:
+                if name not in windows:
+                    windows.append( name )
+                if name not in people:
+                    people.append( name )
+                
+                persons[i], pos = drawSkeleton( output_frame )
+                poses.append( pos )
+                printer += f"{name} : {pos=}\n"
+                cv2.imshow( f"{name}", persons[i] )
+            # name = recognize( persons[i], "./model/recognition.pth" )
+            # people.append( name )
+            # persons[i], pos = drawSkeleton( persons[i] )
+            # cv2.imshow( f"{name}", persons[i] )
+            # poses.append( pos )
+            # printer += f"{name} : {pos=}\n"
+            # windows.append( name )
         
+        tmp = windows
         for window in windows:
             if window not in people:
                 try:
                     cv2.destroyWindow( window )
                     print( f"detroying window {window}" )
+                    tmp.remove( window )
                 except Exception:
                     pass
+        windows = tmp
         
         
         print( printer )
