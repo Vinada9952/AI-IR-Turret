@@ -26,10 +26,7 @@ print( "OpenCV setup done" )
 
 def captureImage():
     ret, frame = cap.read()
-    if ret:
-        return frame
-    print( "can't grab image" )
-    exit()
+    return ret, frame
 
 def load_model():
     if not Path("model/lbph_model.yml").exists():
@@ -193,7 +190,7 @@ windows = [ "image" ]
 
 try:
     while True:
-        ret, frame, info = captureImage()
+        ret, frame = captureImage()
         # print(f"{ret=}, info={info}")
         if not ret:
             print("Failed to grab frame")
@@ -223,6 +220,7 @@ try:
                 persons[i], pos = drawSkeleton( output_frame )
                 poses.append( pos )
                 printer += f"{name} : {pos=}\n"
+                persons[i] = cv2.flip( persons[i], 1 )
                 cv2.imshow( f"{name}", persons[i] )
             # name = recognize( persons[i], "./model/recognition.pth" )
             # people.append( name )
