@@ -21,7 +21,7 @@ MODEL_FILE = MODEL_DIR / "lbph_model.yml"
 HAAR_CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 IMG_WIDTH = 200
 IMG_HEIGHT = 200
-CAPTURE_COUNT = 500  # images per person
+CAPTURE_COUNT = 30  # images per person
 
 # --- Utilitaires ---
 

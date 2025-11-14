@@ -2,9 +2,28 @@ import cv2
 import time
 from ultralytics import YOLO
 import os
+from pathlib import Path
+import shutil
 
 # Load YOLO model
-model = YOLO('./models/yolov8n.pt')
+model = YOLO('./model/yolov8n.pt')
+
+def extract_faces( frame ):
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+
+    img = frame
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(60, 60))
+
+    if len(faces) == 0:
+        return -1
+    
+    (x, y, w, h) = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)[0]
+    face = gray[y:y+h, x:x+w]
+    face_resized = cv2.resize(face, (200, 200))
+
+    return face_resized
 
 def segmentImage(frame, model, conf_thresh=0.5):
     """Return list of cropped person images from frame using provided model"""
@@ -52,7 +71,19 @@ def segment_and_save_images():
         persons = segmentImage(frame, model)
         for person in persons:
             timestamp = str(time.time()).replace('.', '_')
-            cv2.imwrite(f"./treated_data/{timestamp}.jpg", person)
+            face = extract_faces( person )
+            try:
+                if face != -1:
+                    cv2.imshow( "full person", person )
+                    cv2.imshow( "face", face )
+                    cv2.waitKey( 1 )
+                    cv2.imwrite(f"./treated_data/{timestamp}.jpg", face)
+            except ValueError:
+                cv2.imshow( "full person", person )
+                cv2.imshow( "face", face )
+                cv2.waitKey( 1 )
+                cv2.imwrite(f"./treated_data/{timestamp}.jpg", face)
+        # cv2.destroyAllWindows()
 
 def classify_images():
     """Classify detected persons into categories"""
