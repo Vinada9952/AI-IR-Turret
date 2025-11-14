@@ -236,7 +236,7 @@ def load_model():
 
 # --- Reconnaissance en temps réel ---
 
-def recognize(frame, recognizer, label_map, confidence_threshold=70, face_cascade = cv2.CascadeClassifier(HAAR_CASCADE_PATH)):
+def recognize(frame, recognizer, label_map, confidence_threshold=80, face_cascade = cv2.CascadeClassifier(HAAR_CASCADE_PATH)):
     # recognizer, label_map = load_model()
     if recognizer is None:
         return
@@ -334,10 +334,10 @@ def main_menu():
             train_model()
         elif choice == '3':
             try:
-                thr = input("Seuil confiance (par défaut 70, valeurs plus petites = plus strict): ")
-                thr_val = float(thr) if thr.strip() else 70.0
+                thr = input("Seuil confiance (par défaut 80, valeurs plus petites = plus strict): ")
+                thr_val = float(thr) if thr.strip() else 80.0
             except Exception:
-                thr_val = 70.0
+                thr_val = 80.0
             recognizer, label_map = load_model()
             windows = []
             while True:
