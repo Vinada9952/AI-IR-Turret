@@ -136,6 +136,7 @@ def main():
     # Step 1: Process raw images
     print("Processing raw images...")
     segment_and_save_images()
+    cv2.destroyAllWindows()
     
     # Step 2: Classify detected persons
     print("\nStarting classification...")
