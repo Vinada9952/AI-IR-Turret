@@ -5,6 +5,8 @@ import os
 import numpy as np
 from pathlib import Path
 import shutil
+from flask import Flask, request, send_file
+import io
 
 
 # Initialize Mediapipe
@@ -17,7 +19,7 @@ print( "MediaPipe setup done" )
 model = YOLO('./model/yolov8n.pt')
 print( "YOLO setup done" )
 
-cap = cv2.VideoCapture( 2 )
+cap = cv2.VideoCapture( 1 )
 # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 print( "OpenCV setup done" )
@@ -26,6 +28,7 @@ print( "OpenCV setup done" )
 
 def captureImage():
     ret, frame = cap.read()
+    print( f"{ret=}" )
     return ret, frame
 
 def load_model():
@@ -201,72 +204,109 @@ def segmentImage(frame, model, conf_thresh=0.5):
 
     return person_images, positions
 
-print( "setup done" )
+windows = []
+def process( frame ):
+    global windows, model, recognizer, label_map
+    print( "setup done" )
 
-windows = [ "image" ]
 
-try:
-    while True:
-        ret, frame = captureImage()
-        # print(f"{ret=}, info={info}")
-        if not ret:
-            print("Failed to grab frame")
-            break
+    persons, img_poses = segmentImage( frame, model )
+    # overlay debug text
+    # disp = frame.copy() if frame is not None else np.zeros((480,640,3),dtype=np.uint8)
+    # txt = f"{info.get('shape')} {info.get('dtype')} min={info.get('min')} max={info.get('max')} conv={info.get('converted')}"
+    # cv2.putText(disp, txt, (8,20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1, cv2.LINE_AA)
 
-        persons, img_poses = segmentImage( frame, model )
-        # overlay debug text
-        # disp = frame.copy() if frame is not None else np.zeros((480,640,3),dtype=np.uint8)
-        # txt = f"{info.get('shape')} {info.get('dtype')} min={info.get('min')} max={info.get('max')} conv={info.get('converted')}"
-        # cv2.putText(disp, txt, (8,20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1, cv2.LINE_AA)
+    # cv2.imshow( "image", disp )
+    cv2.imshow( "image", frame )
+    cv2.imwrite( "./temp/frame.jpg", frame )
 
-        # cv2.imshow( "image", disp )
-        cv2.imshow( "image", frame )
+    poses = []
+    people = []
+    printer = "\n\n"
+    # cv2.destroyAllWindows()
+    for i in range( len( persons ) ):
+        output_frame, name, returned = recognize( persons[i] )
+        if returned:
+            if name not in windows:
+                windows.append( name )
+            if name not in people:
+                people.append( name )
+            
+            persons[i], pos = drawSkeleton( output_frame )
+            x = pos[0] + img_poses[i][0]
+            y = pos[1] + img_poses[i][1]
+            pos = ( x, y )
+            poses.append( pos )
+            printer += f"{name} : {pos=}\n"
+            persons[i] = cv2.flip( persons[i], 1 )
+            cv2.imshow( f"{name}", persons[i] )
+            cv2.imwrite( f"./temp/{name}.jpg", persons[i] )
+        # name = recognize( persons[i], "./model/recognition.pth" )
+        # people.append( name )
+        # persons[i], pos = drawSkeleton( persons[i] )
+        # cv2.imshow( f"{name}", persons[i] )
+        # poses.append( pos )
+        # printer += f"{name} : {pos=}\n"
+        # windows.append( name )
+    
+    tmp = windows
+    for window in windows:
+        if window not in people:
+            try:
+                cv2.destroyWindow( window )
+                print( f"detroying window {window}" )
+                tmp.remove( window )
+            except Exception:
+                pass
+    windows = tmp
+    
+    
+    print( printer )
 
-        poses = []
-        people = [ "image" ]
-        printer = "\n\n"
-        # cv2.destroyAllWindows()
-        for i in range( len( persons ) ):
-            output_frame, name, returned = recognize( persons[i] )
-            if returned:
-                if name not in windows:
-                    windows.append( name )
-                if name not in people:
-                    people.append( name )
-                
-                persons[i], pos = drawSkeleton( output_frame )
-                x = pos[0] + img_poses[i][0]
-                y = pos[1] + img_poses[i][1]
-                pos = ( x, y )
-                poses.append( pos )
-                printer += f"{name} : {pos=}\n"
-                persons[i] = cv2.flip( persons[i], 1 )
-                cv2.imshow( f"{name}", persons[i] )
-            # name = recognize( persons[i], "./model/recognition.pth" )
-            # people.append( name )
-            # persons[i], pos = drawSkeleton( persons[i] )
-            # cv2.imshow( f"{name}", persons[i] )
-            # poses.append( pos )
-            # printer += f"{name} : {pos=}\n"
-            # windows.append( name )
-        
-        tmp = windows
-        for window in windows:
-            if window not in people:
-                try:
-                    cv2.destroyWindow( window )
-                    print( f"detroying window {window}" )
-                    tmp.remove( window )
-                except Exception:
-                    pass
-        windows = tmp
-        
-        
-        print( printer )
+    datas = {
+        "people": people
+    }
 
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
-            break
-finally:
-    cap.release()
-    cv2.destroyAllWindows()
+    for i in range( len( poses ) ):
+        datas[ people[i] ] = poses[i]
+
+
+    # return datas
+    return printer, datas
+
+
+# try:
+#     while True:
+#         ret, frame = captureImage()
+#         # print(f"{ret=}, info={info}")
+#         if not ret:
+#             print("Failed to grab frame")
+#             break
+#         process( frame )
+#         key = cv2.waitKey(1) & 0xFF
+#         if key == ord('q'):
+#             break
+
+# finally:
+#     cap.release()
+#     cv2.destroyAllWindows()
+
+app = Flask(__name__)
+
+@app.route('/upload', methods=['GET', 'POST'])
+def upload():
+    if 'image' not in request.files:
+        return "Aucune image reçue", 400
+
+    file = request.files['image']
+    img_bytes = file.read()
+
+    np_arr = np.frombuffer(img_bytes, np.uint8)
+    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+    printer, data = process( img )
+    print( f"{data=}" )
+    return data
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
