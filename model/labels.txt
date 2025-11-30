@@ -1,6 +1,3 @@
 0:Alain
-1:Antoine
-2:Arthur
-3:M. Chatta
-4:Matthieu
-5:Vincent
+1:Matthieu
+2:Vincent
